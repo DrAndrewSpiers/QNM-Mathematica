@@ -1557,7 +1557,8 @@ KNSeriesTolerance[wp_] := If[wp === MachinePrecision, 10^-16, 10^-(wp + 1)];
 (* The radial function as used by QNMRadialFunction: KNRadialEvaluate[data, n] is the n-th derivative. In Boyer-Lindquist
    coordinates the values grow exponentially and leave the range of machine numbers at large r; Mathematica then
    continues with arbitrary-precision numbers, and the underflow warnings this can produce are suppressed. *)
-KNRadialEvaluate[data_Association, n_Integer][x_?NumericQ] := Quiet[KNRadialValue[data, n, x], {General::munfl, General::ovfl}];
+KNRadialEvaluate[data_Association, n_Integer][x_?NumericQ] :=
+  KNOutputPrecision[Quiet[KNRadialValue[data, n, x], {General::munfl, General::ovfl}], Lookup[data, "OutputPrecision", MachinePrecision]];
 KNRadialEvaluate[data_Association, n_Integer][x:{___?NumericQ}] := KNRadialValue[data, n, #] & /@ x;
 KNRadialEvaluate /: Derivative[k_Integer?NonNegative][KNRadialEvaluate[data_, n_]] := KNRadialEvaluate[data, n + k];
 
@@ -1618,7 +1619,7 @@ QNMRadialKNHintz[s_, l_, m0_, n_, a0_, Q0_, \[Omega]in_, opts:OptionsPattern[]] 
     "RayLength" -> OptionValue["RayLength"], WorkingPrecision -> wpi, PrecisionGoal -> pg};
   sols = KNRadialSolutions[p, Sequence @@ radopts];
   If[KNWronskian[sols] === $Failed, Message[QNMRadialKN::ndsolve]; Return[$Failed, Module]];
-  data = Join[KNRadialFunctionData[p, sols, wpi, pg], <|"QSign" -> qsign, "Component" -> comp, "Coordinates" -> coords|>];
+  data = Join[KNRadialFunctionData[p, sols, wpi, pg], <|"QSign" -> qsign, "Component" -> comp, "Coordinates" -> coords, "OutputPrecision" -> prec|>];
   If[data["AsymptoticError"] > 10^-(pg - 2) || data["MatchingError"] > 10^-(pg - 3),
     Message[QNMRadialKN::asym, N[data["rfar"]], N[Max[data["AsymptoticError"], data["MatchingError"]]]]];
   QNMRadialFunction[<|"s" -> s, "l" -> l, "m" -> m0, "n" -> n, "a" -> a0, "Q" -> Q0, "\[Omega]" -> \[Omega],
