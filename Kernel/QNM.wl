@@ -25,7 +25,7 @@ BeginPackage["QNM`",
 (*Unprotect symbols*)
 
 
-ClearAttributes[{QNMFrequency, QNMFrequencyKN, QNMRadial, QNMRadialFunction}, {Protected, ReadProtected}];
+ClearAttributes[{QNMFrequency, QNMFrequencyKN, QNMRadial, QNMRadialKN, QNMRadialFunction}, {Protected, ReadProtected}];
 
 
 (* ::Subsection::Closed:: *)
@@ -43,7 +43,12 @@ The mode is the coupled gravito-electromagnetic mode that reduces to the Kerr mo
 QNMRadial::usage = "QNMRadial[s, l, m, n, a] computes the radial eigenfunction of a quasinormal mode.";
 
 
-QNMRadialFunction::usage = "QNMRadialFunction[...] is an object representing a quasinormal mode solution to the radial Teukolsky equation.";
+QNMRadialKN::usage = "QNMRadialKN[s, l, m, n, a, Q] computes the radial function of a quasinormal mode of a Kerr-Newman black hole with spin a and charge Q, \
+as the solution w of P. Hintz's separated radial system (arXiv:2609.33661), normalised to w = 1 at the outer horizon.";
+
+
+QNMRadialFunction::usage = "QNMRadialFunction[...] is an object representing a quasinormal mode solution to the radial Teukolsky equation, \
+or, for Kerr-Newman (QNMRadialKN), to Hintz's separated radial system.";
 
 
 (* ::Subsection::Closed:: *)
@@ -72,6 +77,16 @@ QNMRadial::optx = "Unknown options in `1`.";
 QNMRadial::params = "Invalid parameters s=`1`, l=`2`, m=`3`, n=`4`.";
 QNMRadial::coords = "Coordinate options are either \"BL\", \"Boyer-Lindquist\", or \"Hyperboloidal\", but got `1`.";
 QNMRadial::convergence = "Eigenvalue failed to converge to specified tolerance. Final value `1`.";
+QNMRadialKN::optx = "Unknown options in `1`.";
+QNMRadialKN::params = "Invalid parameters s=`1`, l=`2`, m=`3`, n=`4`.";
+QNMRadialKN::spin = "Kerr-Newman quasinormal modes are only available for the coupled gravito-electromagnetic perturbations, |s| = 1 (electromagnetic-led) or |s| = 2 (gravitational-led), but s=`1` specified.";
+QNMRadialKN::cmplx = "Only real values of a and Q are allowed, but a=`1` and Q=`2` specified.";
+QNMRadialKN::extremal = "The spin a=`1` and charge Q=`2` must satisfy a^2 + Q^2 < 1 (sub-extremal black hole).";
+QNMRadialKN::kerr = "Hintz's radial variables are only defined for Q != 0; for Q = 0 use QNMRadial.";
+QNMRadialKN::coords = "Coordinate options are \"BL\" (or \"Boyer-Lindquist\"), \"Hyperboloidal\" or \"CompactifiedHyperboloidal\", but got `1`.";
+QNMRadialKN::comp = "The component must be \"w\" or \"w\[Sharp]\", but got `1`.";
+QNMRadialKN::ndsolve = "The numerical integration of the radial system failed.";
+QNMRadialKN::asym = "The asymptotic series was matched at r = `1` with an estimated relative error `2`; values beyond this radius may be inaccurate.";
 QNMRadialFunction::dmval = "Radius `1` lies outside the computational domain.";
 
 
@@ -953,7 +968,8 @@ KNHorizonSolution[p_Association, nser_, x00_, rmatch_, wp_, pg_] :=
       ws'[r] == (Mm[r] w[r] - c[r] ws[r])/\[CapitalDelta][r],
       w[r0] == SetPrecision[ef ser[[1]], wp], ws[r0] == SetPrecision[ef ser[[2]], wp]},
     {w, ws}, {r, r0, rmatch},
-    WorkingPrecision -> wp, PrecisionGoal -> pg, AccuracyGoal -> Infinity, MaxSteps -> Infinity, Method -> KNODEMethod[wp]],
+    WorkingPrecision -> wp, PrecisionGoal -> pg, AccuracyGoal -> Infinity, MaxSteps -> Infinity, Method -> KNODEMethod[wp],
+    InterpolationOrder -> All],
     {NDSolve::ndsz, NDSolve::precw}];
   <|"SeriesCoefficients" -> coeffs, "x0" -> x0, "r0" -> r0, "rmatch" -> rmatch, "w" -> (w /. sol), "w\[Sharp]" -> (ws /. sol)|>
 ];
@@ -1302,6 +1318,374 @@ QNMFrequencyKN /: N[QNMFrequencyKN[s_, l_, m_, n_, a_?NumericQ, Q_?NumericQ, opt
   QNMFrequencyKN[s, l, m, n, N[a, Nopts], N[Q, Nopts], opts];
 
 
+(* ::Subsection::Closed:: *)
+(*Radial functions: asymptotic series at infinity*)
+
+
+(* ::Text:: *)
+(*At large r the outgoing solution has the asymptotic expansion w = Exp[I k r] r^p Sum[\[Alpha]_j r^-j], w\[Sharp] = Exp[I k r] r^(p-1) Sum[\[Beta]_j r^-j], with k = 2\[Omega] + \[Xi]0, \[Alpha]_0 = 1 and \[Beta]_0 = I k/\[Rho]1'. The order-r^p balance fixes p = 4 I \[Omega] (M = 1), independently of a, Q and the spin system. With the coefficients P = \[Rho]1' r + P0, Mm = \[Rho]1' r + M0 and c + I k \[CapitalDelta] = C2 r^2 + C1 r + C0 of the system for (u, u\[Sharp]) = Exp[-I k r] (w, w\[Sharp]), the leading balance is degenerate (I k C2 = \[Rho]1'^2, which is the equation for k), and eliminating \[Alpha]_(j+1) from the next order gives the recurrence below. The series is asymptotic (divergent) and is summed up to its smallest term.*)
+
+
+KNAsymptoticSeries[p_Association, nmax_Integer] :=
+ Module[{\[Omega], a, Q, m, sg, \[Lambda]p, \[Lambda]m, \[Xi]0, r1, k, P0, M0, e, C2, C1, C0, pp, al, be, X},
+  {\[Omega], a, Q, m, sg, \[Lambda]p, \[Lambda]m, \[Xi]0, r1, k} =
+    Lookup[p, {"\[Omega]", "a", "Q", "m", "sg", "\[Lambda]p", "\[Lambda]m", "\[Xi]0", "\[Rho]1p", "k"}];
+  P0 = I \[Lambda]p - r1 Q^2;
+  M0 = I \[Lambda]m - r1 Q^2;
+  e = a^2 + Q^2;
+  C2 = -2 I \[Omega] - 2 I \[Xi]0 + I k;
+  C1 = (1 - 3 sg) + 4 I \[Xi]0 - 2 I k;
+  C0 = -(1 - 3 sg) - 2 I a^2 \[Omega] + 2 I a m - 2 I \[Xi]0 e + I k e;
+  (* exponent from the order-r^p balance; equal to 4 I \[Omega] *)
+  pp = (r1 (M0 + P0) - I k (C1 - 1))/(2 I \[Omega]);
+  al = ConstantArray[0, nmax + 1];
+  be = ConstantArray[0, nmax + 1];
+  al[[1]] = 1;
+  be[[1]] = I k/r1;
+  (* in arbitrary precision, fixed-precision arithmetic: significance arithmetic would underestimate the precision *)
+  Block[{$MinPrecision = If[Precision[r1] === MachinePrecision, 0, Precision[r1]], $MaxPrecision = If[Precision[r1] === MachinePrecision, Infinity, Precision[r1]]},
+  Do[
+    X = ((pp - j - 1 + C1) - C2 P0/r1)/r1;
+    al[[j + 1]] = r1/(2 I \[Omega] j) (X ((pp - j + 1) al[[j]] - P0 be[[j]]) + (C0 - 2 (pp - j)) be[[j]] +
+      e (pp - j + 1) If[j >= 2, be[[j - 1]], 0]);
+    be[[j + 1]] = (I k al[[j + 1]] + (pp - j + 1) al[[j]] - P0 be[[j]])/r1;
+  , {j, 1, nmax}]];
+  <|"p" -> pp, "\[Alpha]" -> al, "\[Beta]" -> be|>
+];
+
+
+(* Sum of the asymptotic series at r, truncated before the terms start to grow or once they are below eps.
+   Returns {Sum[\[Alpha]_j r^-j], Sum[\[Beta]_j r^-j], relative size of the last term used, number of terms used}. *)
+KNAsymptoticSum[ser_Association, r_, eps_] :=
+ Module[{al = ser["\[Alpha]"], be = ser["\[Beta]"], S, Ss, ta, tb, rj = 1, prev = Infinity, j, nused = 1},
+  {S, Ss} = {al[[1]], be[[1]]};
+  For[j = 1, j < Length[al], j++,
+    rj = rj/r;
+    ta = al[[j + 1]] rj;
+    tb = be[[j + 1]] rj;
+    If[Abs[ta] > prev, Break[]];
+    S += ta;
+    Ss += tb;
+    nused = j + 1;
+    prev = Abs[ta];
+    If[Abs[ta] <= eps Abs[S] && Abs[tb] <= eps Abs[Ss], Break[]];
+  ];
+  {S, Ss, prev/Abs[S], nused}
+];
+
+
+(* ::Subsection::Closed:: *)
+(*Radial functions: construction*)
+
+
+(* ::Text:: *)
+(*The radial function is evaluated piecewise (normalised to w(r+) = 1): (A) r+ <= r <= r0: the horizon series; (B) r0 <= r <= rmatch: the horizon solution integrated along the real axis (as for the frequency); (C) rmatch <= r <= rfar: the outgoing solution, i.e. the solution on the complex ray at r = rmatch scaled to w at rmatch, continued along the real axis with the outgoing exponential factored out, (u, u\[Sharp]) = Exp[-I k (r - rmatch)] (w, w\[Sharp]); (D) r >= rfar: the asymptotic series, matched to (C) at rfar. rfar is the smallest radius rmatch 2^j >= 20 at which the asymptotic series has converged to the precision goal. At a quasinormal frequency the horizon and outgoing solutions coincide; w is continuous at rmatch by construction and w\[Sharp] jumps by the (relative) mismatch, which is of the order of the Wronskian at the computed frequency. Continuing the horizon solution itself would be less accurate for weakly damped modes: its small ingoing admixture, set by the error of the frequency, grows relative to the outgoing solution like a power of r.*)
+
+
+KNRadialFunctionData[p_Association, sols_Association, wp_, pg_] :=
+ Module[{hor, inf, rm, wH, wsH, Cout, uO, usO, ser, eps, R, Rmax, P, Mm, \[CapitalDelta], c, k, u, us, r, solC, S, Ss, err, nused, pp, Dm, Ds, rp},
+  hor = sols["Horizon"];
+  inf = sols["Infinity"];
+  rm = hor["rmatch"];
+  wH = hor["w"];
+  wsH = hor["w\[Sharp]"];
+  (* outgoing solution at rmatch (end of the ray), scaled so that w is continuous at rmatch *)
+  Cout = wH[rm]/inf["u"][inf["\[Rho]"]];
+  uO = wH[rm];
+  usO = Cout inf["u\[Sharp]"][inf["\[Rho]"]];
+  rp = p["rp"];
+  k = p["k"];
+  ser = KNAsymptoticSeries[p, 150];
+  pp = ser["p"];
+  eps = 10^-(pg + 1);
+  Rmax = If[wp === MachinePrecision, 10^6, 10^(Ceiling[wp/2] + 3)];
+  R = Max[2 rm, SetPrecision[20, wp]];
+  While[KNAsymptoticSum[ser, R, eps][[3]] > eps && R < Rmax, R = 2 R];
+  {P, Mm, \[CapitalDelta], c} = KNRadialCoefficients[p];
+  solC = Quiet[First @ NDSolve[{
+      u'[r] == P[r] us[r] - I k u[r],
+      us'[r] == (Mm[r] u[r] - (c[r] + I k \[CapitalDelta][r]) us[r])/\[CapitalDelta][r],
+      u[rm] == uO, us[rm] == usO},
+    {u, us}, {r, rm, R},
+    WorkingPrecision -> wp, PrecisionGoal -> pg, AccuracyGoal -> Infinity, MaxSteps -> Infinity, Method -> KNODEMethod[wp],
+    InterpolationOrder -> All],
+    {NDSolve::ndsz, NDSolve::precw}];
+  {S, Ss, err, nused} = KNAsymptoticSum[ser, R, eps];
+  (* matching constant: u = Dm r^p S(r) and u\[Sharp] = Dm r^(p-1) S\[Sharp](r) at rfar; the two estimates agree for an outgoing solution *)
+  Dm = (u /. solC)[R]/(R^pp S);
+  Ds = (us /. solC)[R]/(R^(pp - 1) Ss);
+  <|"Parameters" -> p, "HorizonSeries" -> hor["SeriesCoefficients"], "x0" -> hor["x0"], "r0" -> hor["r0"],
+    "rmatch" -> rm, "w" -> wH, "w\[Sharp]" -> wsH, "rfar" -> R, "u" -> (u /. solC), "u\[Sharp]" -> (us /. solC),
+    "AsymptoticSeries" -> ser, "p" -> pp, "D" -> Dm,
+    (* w ~ \[ScriptCapitalI] Exp[I k (r - r+)] (r/r+)^p as r -> Infinity *)
+    "\[ScriptCapitalI]" -> Dm Exp[I k (rp - rm)] rp^pp,
+    "MatchingError" -> Abs[Ds/Dm - 1], "AsymptoticError" -> err, "WorkingPrecision" -> wp,
+    "Mismatch" -> Abs[usO - wsH[rm]]/Abs[wsH[rm]]|>
+];
+
+
+(* ::Subsection::Closed:: *)
+(*Radial functions: evaluation*)
+
+
+(* ::Text:: *)
+(*Derivatives of w and w\[Sharp] are computed exactly from the radial system: for F = \[Alpha] w + \[Beta] w\[Sharp], F' = (\[Alpha]' + \[Beta] Mm/\[CapitalDelta]) w + (\[Beta]' + \[Alpha] P - \[Beta] c/\[CapitalDelta]) w\[Sharp]. Near the horizon (piece A) the series is differentiated instead, because the system is singular at r+.*)
+
+
+KNODEDerivativeCoefficients[p_Association, comp_, n_Integer] := KNODEDerivativeCoefficients[p, comp, n] =
+ Module[{r, P, Mm, \[CapitalDelta], c, al, be, res},
+  {P, Mm, \[CapitalDelta], c} = KNRadialCoefficients[p];
+  {al, be} = If[comp === "w", {1, 0}, {0, 1}];
+  res = {{al, be}};
+  Do[
+    {al, be} = {D[al, r] + be Mm[r]/\[CapitalDelta][r], D[be, r] + al P[r] - be c[r]/\[CapitalDelta][r]};
+    AppendTo[res, {al, be}];
+  , {n}];
+  Function @@ {r, res}
+];
+
+
+(* d^i/dr^i of Exp[G], G = -I k (r - r+) - p Log[r/r+], divided by Exp[G] *)
+KNHyperboloidalFactors[k_, pp_, n_Integer] := KNHyperboloidalFactors[k, pp, n] =
+ Module[{r, h = 1, res = {1}},
+  Do[h = D[h, r] + h (-I k - pp/r); AppendTo[res, h], {n}];
+  Function @@ {r, res}
+];
+
+
+(* d^n/d\[Sigma]^n H(1/\[Sigma]) = Sum[e_(n,j)(r) H^(j)(r)], from d/d\[Sigma] = -r^2 d/dr *)
+KNCompactifiedFactors[n_Integer] := KNCompactifiedFactors[n] =
+ Module[{r, e = {1}},
+  Do[e = Table[-r^2 (If[j <= Length[e], D[e[[j]], r], 0] + If[j >= 2, e[[j - 1]], 0]), {j, 1, Length[e] + 1}], {n}];
+  Function @@ {r, e}
+];
+
+
+(* BL derivatives of the selected component at r: {E, {V_0, ..., V_n}} with d^j/dr^j (component) = Exp[E] V_j *)
+KNRadialBLDerivatives[data_Association, comp_, n_Integer, r_] :=
+ Module[{p, rp, d, \[Xi]0, k, rm, x, coeffs, wt, E, V, W, S, ser, Sa, Ssa},
+  p = data["Parameters"];
+  rp = p["rp"];
+  rm = data["rmatch"];
+  k = p["k"];
+  Which[
+    r <= data["r0"],
+      (* piece A: w = Exp[I \[Xi]0 (r - r+)] Sum[a_j x^j] *)
+      d = p["d"];
+      \[Xi]0 = p["\[Xi]0"];
+      x = (r - rp)/d;
+      coeffs = data["HorizonSeries"][[If[comp === "w", 1, 2]]];
+      (* i-th derivative of Sum[c_j x^j] by Horner's rule *)
+      wt = Table[d^-i Fold[#1 x + #2 &, 0, Reverse[Table[coeffs[[j + 1]] FactorialPower[j, i], {j, i, Length[coeffs] - 1}]]], {i, 0, n}];
+      E = I \[Xi]0 (r - rp);
+      V = Table[Sum[Binomial[j, i] (I \[Xi]0)^(j - i) wt[[i + 1]], {i, 0, j}], {j, 0, n}],
+    r <= rm,
+      (* piece B *)
+      E = 0;
+      {W, S} = {data["w"][r], data["w\[Sharp]"][r]};
+      V = (#[[1]] W + #[[2]] S) & /@ KNODEDerivativeCoefficients[p, comp, n][r],
+    r <= data["rfar"],
+      (* piece C *)
+      E = I k (r - rm);
+      {W, S} = {data["u"][r], data["u\[Sharp]"][r]};
+      V = (#[[1]] W + #[[2]] S) & /@ KNODEDerivativeCoefficients[p, comp, n][r],
+    True,
+      (* piece D *)
+      E = I k (r - rm);
+      ser = data["AsymptoticSeries"];
+      {Sa, Ssa} = Take[KNAsymptoticSum[ser, r, KNSeriesTolerance[data["WorkingPrecision"]]], 2];
+      {W, S} = {data["D"] r^data["p"] Sa, data["D"] r^(data["p"] - 1) Ssa};
+      V = (#[[1]] W + #[[2]] S) & /@ KNODEDerivativeCoefficients[p, comp, n][r]
+  ];
+  {E, V}
+];
+
+
+(* Derivatives of the hyperboloidal function H = Exp[-I k (r - r+)] (r/r+)^-p (component) at r *)
+KNRadialHyperboloidalDerivatives[data_Association, comp_, n_Integer, r_] :=
+ Module[{p = data["Parameters"], rp, k, pp, ser, J, al, E, V, h},
+  rp = p["rp"];
+  k = p["k"];
+  pp = data["p"];
+  If[r > data["rfar"],
+    (* piece D: H = \[ScriptCapitalI] Sum[\[Alpha]_j r^-j] for w and \[ScriptCapitalI] Sum[\[Beta]_j r^(-j-1)] for w\[Sharp] *)
+    ser = data["AsymptoticSeries"];
+    J = KNAsymptoticSum[ser, r, KNSeriesTolerance[data["WorkingPrecision"]]][[4]];
+    Table[data["\[ScriptCapitalI]"] If[comp === "w",
+        Sum[ser["\[Alpha]"][[j + 1]] (-1)^i Pochhammer[j, i] r^(-j - i), {j, 0, J - 1}],
+        Sum[ser["\[Beta]"][[j + 1]] (-1)^i Pochhammer[j + 1, i] r^(-j - 1 - i), {j, 0, J - 1}]], {i, 0, n}],
+    {E, V} = KNRadialBLDerivatives[data, comp, n, r];
+    h = KNHyperboloidalFactors[k, pp, n][r];
+    Exp[E - I k (r - rp) - pp Log[r/rp]] Table[Sum[Binomial[i, j] h[[i - j + 1]] V[[j + 1]], {j, 0, i}], {i, 0, n}]
+  ]
+];
+
+
+KNRadialValue[data_Association, n_Integer, x_?NumericQ] :=
+ Module[{comp = data["Component"], sign, E, V, r, H, ser, J, e},
+  sign = If[comp === "w", 1, data["QSign"]];
+  sign * Switch[data["Coordinates"],
+    "BL",
+      {E, V} = KNRadialBLDerivatives[data, comp, n, x];
+      Exp[E] V[[n + 1]],
+    "Hyperboloidal",
+      KNRadialHyperboloidalDerivatives[data, comp, n, x][[n + 1]],
+    "CompactifiedHyperboloidal",
+      Which[
+        x == 0,
+          data["\[ScriptCapitalI]"] n! If[comp === "w", data["AsymptoticSeries"]["\[Alpha]"][[n + 1]], If[n == 0, 0, data["AsymptoticSeries"]["\[Beta]"][[n]]]],
+        1/x > data["rfar"],
+          (* piece D directly in \[Sigma] = 1/r *)
+          ser = data["AsymptoticSeries"];
+          J = KNAsymptoticSum[ser, 1/x, KNSeriesTolerance[data["WorkingPrecision"]]][[4]];
+          data["\[ScriptCapitalI]"] If[comp === "w",
+            Sum[ser["\[Alpha]"][[j + 1]] FactorialPower[j, n] If[j == n, 1, x^(j - n)], {j, n, J - 1}],
+            Sum[ser["\[Beta]"][[j + 1]] FactorialPower[j + 1, n] If[j + 1 == n, 1, x^(j + 1 - n)], {j, Max[n - 1, 0], J - 1}]],
+        True,
+          r = 1/x;
+          H = KNRadialHyperboloidalDerivatives[data, comp, n, r];
+          e = KNCompactifiedFactors[n][r];
+          Sum[e[[j + 1]] H[[j + 1]], {j, 0, n}]
+      ]
+  ]
+];
+
+
+KNSeriesTolerance[wp_] := If[wp === MachinePrecision, 10^-16, 10^-(wp + 1)];
+
+
+(* The radial function as used by QNMRadialFunction: KNRadialEvaluate[data, n] is the n-th derivative. In Boyer-Lindquist
+   coordinates the values grow exponentially and leave the range of machine numbers at large r; Mathematica then
+   continues with arbitrary-precision numbers, and the underflow warnings this can produce are suppressed. *)
+KNRadialEvaluate[data_Association, n_Integer][x_?NumericQ] := Quiet[KNRadialValue[data, n, x], {General::munfl, General::ovfl}];
+KNRadialEvaluate[data_Association, n_Integer][x:{___?NumericQ}] := KNRadialValue[data, n, #] & /@ x;
+KNRadialEvaluate /: Derivative[k_Integer?NonNegative][KNRadialEvaluate[data_, n_]] := KNRadialEvaluate[data, n + k];
+
+
+KNRadialSetComponent[KNRadialEvaluate[data_, n_], comp_] := KNRadialEvaluate[Append[data, "Component" -> comp], n];
+
+
+(* ::Subsection::Closed:: *)
+(*QNMRadialKN*)
+
+
+KNOutputPrecision[x_, prec_] := If[prec === MachinePrecision || prec <= $MachinePrecision, N[x], SetPrecision[x, prec]];
+
+
+Options[QNMRadialKNHintz] = Join[Options[QNMFrequencyKNHintz], {"Coordinates" -> "BL", "Component" -> "w"}];
+
+
+QNMRadialKNHintz[s_, l_, m0_, n_, a0_, Q0_, \[Omega]in_, opts:OptionsPattern[]] :=
+ Module[{coords, comp, prec, wp, wpi, pg, m, a, Q, qsign, b, sg, L, \[Omega], \[Omega]w, aw, Qw, \[Delta], p, radopts, sols, data, rp},
+  (* coordinates and component *)
+  coords = OptionValue["Coordinates"] /. {"Boyer-Lindquist" | "BoyerLindquist" -> "BL"};
+  If[!MemberQ[{"BL", "Hyperboloidal", "CompactifiedHyperboloidal"}, coords],
+    Message[QNMRadialKN::coords, OptionValue["Coordinates"]]; Return[$Failed, Module]];
+  comp = OptionValue["Component"] /. {"wsharp" | "w#" -> "w\[Sharp]"};
+  If[!MemberQ[{"w", "w\[Sharp]"}, comp], Message[QNMRadialKN::comp, comp]; Return[$Failed, Module]];
+  (* frequency *)
+  \[Omega] = If[\[Omega]in === Automatic,
+    QNMFrequencyKN[s, l, m0, n, a0, Q0, Method -> Prepend[FilterRules[{opts}, Options[QNMFrequencyKNHintz]], "HintzSeparated"]],
+    \[Omega]in];
+  If[!NumericQ[\[Omega]], Return[$Failed, Module]];
+  (* precision: as for QNMFrequencyKN *)
+  prec = Min[KNPrecision[a0], KNPrecision[Q0]];
+  wp = OptionValue[WorkingPrecision];
+  If[wp === Automatic, wp = prec];
+  pg = OptionValue[PrecisionGoal];
+  If[wp === MachinePrecision || wp <= $MachinePrecision,
+    wpi = MachinePrecision;
+    If[pg === Automatic, pg = 11, pg = Min[pg, 13]],
+    wpi = Ceiling[wp] + 12;
+    If[pg === Automatic, pg = Ceiling[wp] + 2]
+  ];
+  (* symmetries: (a, m) -> (-a, -m) leaves the radial system unchanged; (Q, \[Lambda], w, w\[Sharp]) -> (-Q, -\[Lambda], w, -w\[Sharp]) maps solutions *)
+  m = If[a0 < 0, -m0, m0];
+  {a, Q} = SetPrecision[{Abs[a0], Abs[Q0]}, wpi];
+  qsign = If[Q0 < 0, -1, 1];
+  b = If[Abs[s] == 2, 1, -1];
+  sg = OptionValue["SpinSystem"];
+  L = OptionValue["AngularTruncation"];
+  If[L === Automatic, L = Max[l, Abs[m], 2] + 22];
+  \[Omega]w = SetPrecision[\[Omega], wpi];
+  {aw, Qw} = SetPrecision[{a \[Omega]w, Q}, MachinePrecision];
+  \[Delta] = If[a == 0, N[KNDeltaRN[l, Q, b], wpi],
+    KNDelta[a \[Omega]w, Q, m, sg, b, KNDeltaBranch[aw, Qw, m, l, b, sg, L], L, wpi]];
+  p = KNRadialParameters[\[Omega]w, a, Q, m, sg, b, \[Delta]];
+  rp = p["rp"];
+  (* the same numerical parameters as for the frequency *)
+  radopts = {"SeriesOrder" -> OptionValue["SeriesOrder"], "MatchingRadius" -> OptionValue["MatchingRadius"],
+    "RayLength" -> OptionValue["RayLength"], WorkingPrecision -> wpi, PrecisionGoal -> pg};
+  sols = KNRadialSolutions[p, Sequence @@ radopts];
+  If[KNWronskian[sols] === $Failed, Message[QNMRadialKN::ndsolve]; Return[$Failed, Module]];
+  data = Join[KNRadialFunctionData[p, sols, wpi, pg], <|"QSign" -> qsign, "Component" -> comp, "Coordinates" -> coords|>];
+  If[data["AsymptoticError"] > 10^-(pg - 2) || data["MatchingError"] > 10^-(pg - 3),
+    Message[QNMRadialKN::asym, N[data["rfar"]], N[Max[data["AsymptoticError"], data["MatchingError"]]]]];
+  QNMRadialFunction[<|"s" -> s, "l" -> l, "m" -> m0, "n" -> n, "a" -> a0, "Q" -> Q0, "\[Omega]" -> \[Omega],
+    "Eigenvalue" -> KNOutputPrecision[qsign p["\[Lambda]"], prec],
+    "Family" -> If[b == 1, "gravitational-led", "electromagnetic-led"], "SpinSystem" -> sg, "Component" -> comp,
+    "Method" -> "HintzSeparated",
+    "Amplitudes" -> (KNOutputPrecision[#, prec] & /@ <|"\[ScriptCapitalH]" -> 1, "\[ScriptCapitalI]" -> data["\[ScriptCapitalI]"]|>),
+    "AsymptoticExponents" -> (KNOutputPrecision[#, prec] & /@ <|"k" -> p["k"], "p" -> data["p"]|>),
+    "RadialFunction" -> KNRadialEvaluate[data, 0],
+    "Coordinates" -> coords,
+    "Domain" -> If[coords === "CompactifiedHyperboloidal", {0, 1/rp}, {rp, Infinity}]|>]
+];
+
+
+SyntaxInformation[QNMRadialKN] =
+ {"ArgumentsPattern" -> {_, _, _, _, _, _, OptionsPattern[]}};
+
+
+Options[QNMRadialKN] = {Method -> Automatic, "Frequency" -> Automatic};
+
+
+SetAttributes[QNMRadialKN, {Listable, NHoldAll}];
+
+
+QNMRadialKN[s_?NumericQ, l_?NumericQ, m_?NumericQ, n_?NumericQ, a_, Q_, OptionsPattern[]] /;
+  l < Abs[s] || Abs[m] > l || !AllTrue[{2s, 2l, 2m}, IntegerQ] || !IntegerQ[l-s] || !IntegerQ[m-s] || !IntegerQ[n] || n < 0 :=
+ (Message[QNMRadialKN::params, s, l, m, n]; $Failed);
+
+
+QNMRadialKN[s_?NumericQ, l_, m_, n_, a_, Q_, OptionsPattern[]] /; !MemberQ[{1, 2}, Abs[s]] :=
+ (Message[QNMRadialKN::spin, s]; $Failed);
+
+
+QNMRadialKN[s_, l_, m_, n_, a_, Q_, OptionsPattern[]] /; MatchQ[a, _Complex] || MatchQ[Q, _Complex] :=
+ (Message[QNMRadialKN::cmplx, a, Q]; $Failed);
+
+
+QNMRadialKN[s_, l_, m_, n_, a_?NumericQ, Q_?NumericQ, OptionsPattern[]] /;
+  (InexactNumberQ[a] || InexactNumberQ[Q]) && TrueQ[a^2 + Q^2 >= 1] :=
+ (Message[QNMRadialKN::extremal, a, Q]; $Failed);
+
+
+QNMRadialKN[s_Integer, l_Integer, m_Integer, n_Integer, a_?NumericQ, Q_?NumericQ, OptionsPattern[]] /;
+  (InexactNumberQ[a] || InexactNumberQ[Q]) && Q == 0 :=
+ (Message[QNMRadialKN::kerr]; $Failed);
+
+
+QNMRadialKN[s_Integer, l_Integer, m_Integer, n_Integer, a_?NumericQ, Q_?NumericQ, OptionsPattern[]] /;
+  (InexactNumberQ[a] || InexactNumberQ[Q]) :=
+ Module[{opts, res, \[Omega] = OptionValue["Frequency"]},
+  Switch[OptionValue[Method],
+    Automatic | "HintzSeparated",
+      res = QNMRadialKNHintz[s, l, m, n, a, Q, \[Omega]];,
+    {"HintzSeparated", Rule[_, _]...},
+      opts = FilterRules[Rest[OptionValue[Method]], Options[QNMRadialKNHintz]];
+      If[opts =!= Rest[OptionValue[Method]],
+        Message[QNMRadialKN::optx, Method -> OptionValue[Method]];
+      ];
+      res = QNMRadialKNHintz[s, l, m, n, a, Q, \[Omega], Sequence @@ opts];,
+    _,
+      Message[QNMRadialKN::optx, Method -> OptionValue[Method]];
+      res = $Failed;
+  ];
+  res
+];
+
+
 (* ::Section::Closed:: *)
 (*QNMRadial*)
 
@@ -1434,6 +1818,34 @@ SetAttributes[QNMRadialFunction, {NHoldAll}];
 (*Output format*)
 
 
+(* Kerr-Newman objects (from QNMRadialKN) also show the charge, the family, the spin system and the component *)
+QNMRadialFunction /:
+MakeBoxes[qnmrf: QNMRadialFunction[assoc_?(AssociationQ[#] && KeyExistsQ[#, "Q"] &)], form:(StandardForm|TraditionalForm)] :=
+ Module[{summary, extended},
+  summary = {Row[{BoxForm`SummaryItem[{"s: ", assoc["s"]}], "  ",
+                  BoxForm`SummaryItem[{"l: ", assoc["l"]}], "  ",
+                  BoxForm`SummaryItem[{"m: ", assoc["m"]}], "  ",
+                  BoxForm`SummaryItem[{"n: ", assoc["n"]}]}],
+             Row[{BoxForm`SummaryItem[{"a: ", assoc["a"]}], "  ",
+                  BoxForm`SummaryItem[{"Q: ", assoc["Q"]}]}],
+             BoxForm`SummaryItem[{"Family: ", assoc["Family"]}]};
+  extended = {BoxForm`SummaryItem[{"Frequency: ", assoc["\[Omega]"]}],
+              BoxForm`SummaryItem[{"Eigenvalue: ", assoc["Eigenvalue"]}],
+              BoxForm`SummaryItem[{"Component: ", assoc["Component"]}],
+              BoxForm`SummaryItem[{"Spin system: ", assoc["SpinSystem"]}],
+              BoxForm`SummaryItem[{"Coordinates: ", assoc["Coordinates"]}]
+              };
+  BoxForm`ArrangeSummaryBox[
+    QNMRadialFunction,
+    qnmrf,
+    None,
+    summary,
+    extended,
+    form
+  ]
+];
+
+
 QNMRadialFunction /:
 MakeBoxes[qnmrf: QNMRadialFunction[assoc_], form:(StandardForm|TraditionalForm)] :=
  Module[{summary, extended},
@@ -1459,6 +1871,11 @@ MakeBoxes[qnmrf: QNMRadialFunction[assoc_], form:(StandardForm|TraditionalForm)]
 
 (* ::Subsection::Closed:: *)
 (*Accessing attributes*)
+
+
+(* Kerr-Newman objects: qnm["w"] and qnm["w\[Sharp]"] return the same solution with the given component of Hintz's radial system *)
+QNMRadialFunction[assoc_][comp:("w" | "w\[Sharp]")] /; AssociationQ[assoc] && KeyExistsQ[assoc, "Q"] && MatchQ[assoc["RadialFunction"], _KNRadialEvaluate] :=
+  QNMRadialFunction[Join[assoc, <|"Component" -> comp, "RadialFunction" -> KNRadialSetComponent[assoc["RadialFunction"], comp]|>]];
 
 
 QNMRadialFunction[assoc_][key_String] := assoc[key];
@@ -1520,7 +1937,7 @@ Derivative[n_][QNMRadialFunction[assoc_]][r:(_?NumericQ|{_?NumericQ..})] :=
 (*Protect symbols*)
 
 
-SetAttributes[{QNMFrequency, QNMFrequencyKN, QNMRadial, QNMRadialFunction}, {Protected, ReadProtected}];
+SetAttributes[{QNMFrequency, QNMFrequencyKN, QNMRadial, QNMRadialKN, QNMRadialFunction}, {Protected, ReadProtected}];
 
 
 (* ::Subsection::Closed:: *)
