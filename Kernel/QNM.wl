@@ -941,11 +941,14 @@ KNHorizonSeriesValue[{A_, B_}, x0_] :=
 
 
 (* ::Text:: *)
-(*Horizon solution: the series is evaluated at x0 and the system for (w, w\[Sharp]) is integrated along the real axis to the matching radius rmatch. By default x0 = 1/3, as in the note. If the series has large intermediate terms at x = 1/3 (its sum would cancel), x0 is reduced by factors of 3 until the largest term is below 10^6 times the sum (10^(wp - pg) in extended precision); with the factor Exp[I \[Xi]0 r] removed this is rarely needed. Starting closer to the horizon is not better in general, because the integration from there loses accuracy. The result contains the series coefficients of w~ and w\[Sharp]~ (valid for r+ <= r <= r0, with w = Exp[I \[Xi]0 (r - r+)] w~) and the solution (w, w\[Sharp]) on [r0, rmatch].*)
+(*Horizon solution: the series is evaluated at x0 and the system for (w, w\[Sharp]) is integrated along the real axis to the matching radius rmatch. By default x0 = 1/3, as in the note. If the series has large intermediate terms at x = 1/3 (its sum would cancel), x0 is reduced by factors of 3 until the largest term is below 10^6 times the sum (10^(wp - pg) in extended precision); with the factor Exp[I \[Xi]0 r] removed this is rarely needed. Starting closer to the horizon is not better in general, because the integration from there loses accuracy. The result contains the series coefficients of w~ and w\[Sharp]~ (valid for r+ <= r <= r0, with w = Exp[I \[Xi]0 (r - r+)] w~) and the solution (w, w\[Sharp]) on [r0, rmatch]. The option InterpolationOrder is passed to NDSolve. The frequency needs only the values at rmatch and uses NDSolve's default; radial functions (QNMRadialKN) request InterpolationOrder -> All (the dense output of the integration method), which makes the solution accurate between steps but each integration several times slower, so it is not used in the root search.*)
 
 
-KNHorizonSolution[p_Association, nser_, x00_, rmatch_, wp_, pg_] :=
- Module[{coeffs, x0, ser, cancel, P, Mm, \[CapitalDelta], c, ef, r0, w, ws, r, sol},
+Options[KNHorizonSolution] = {InterpolationOrder -> Automatic};
+
+
+KNHorizonSolution[p_Association, nser_, x00_, rmatch_, wp_, pg_, OptionsPattern[]] :=
+ Module[{coeffs, x0, ser, cancel, P, Mm, \[CapitalDelta], c, ef, r0, w, ws, r, sol, io},
   coeffs = KNHorizonSeriesCoefficients[p, nser, wp];
   If[x00 === Automatic,
     cancel = 10^Max[6, If[wp === MachinePrecision, 0, wp - pg]];
@@ -963,13 +966,15 @@ KNHorizonSolution[p_Association, nser_, x00_, rmatch_, wp_, pg_] :=
   r0 = p["rp"] + p["d"] x0;
   (* w = Exp[I \[Xi]0 (r - r+)] w~; the system for w itself is integrated (the one for w~ is stiff near extremality) *)
   ef = Exp[I p["\[Xi]0"] p["d"] x0];
+  (* the default (Automatic) leaves NDSolve's own default in place (no InterpolationOrder option is passed) *)
+  io = OptionValue[InterpolationOrder];
+  io = If[io === Automatic, {}, {InterpolationOrder -> io}];
   sol = Quiet[First @ NDSolve[{
       w'[r] == P[r] ws[r],
       ws'[r] == (Mm[r] w[r] - c[r] ws[r])/\[CapitalDelta][r],
       w[r0] == SetPrecision[ef ser[[1]], wp], ws[r0] == SetPrecision[ef ser[[2]], wp]},
     {w, ws}, {r, r0, rmatch},
-    WorkingPrecision -> wp, PrecisionGoal -> pg, AccuracyGoal -> Infinity, MaxSteps -> Infinity, Method -> KNODEMethod[wp],
-    InterpolationOrder -> All],
+    WorkingPrecision -> wp, PrecisionGoal -> pg, AccuracyGoal -> Infinity, MaxSteps -> Infinity, Method -> KNODEMethod[wp], Sequence @@ io],
     {NDSolve::ndsz, NDSolve::precw}];
   <|"SeriesCoefficients" -> coeffs, "x0" -> x0, "r0" -> r0, "rmatch" -> rmatch, "w" -> (w /. sol), "w\[Sharp]" -> (ws /. sol)|>
 ];
@@ -1013,7 +1018,7 @@ KNInfinitySolution[p_Association, rmatch_, \[Rho]_, wp_, pg_] :=
 
 
 Options[KNRadialSolutions] = {"SeriesOrder" -> Automatic, "SeriesPoint" -> Automatic, "MatchingRadius" -> 6, "RayLength" -> Automatic,
-  WorkingPrecision -> MachinePrecision, PrecisionGoal -> Automatic};
+  WorkingPrecision -> MachinePrecision, PrecisionGoal -> Automatic, InterpolationOrder -> Automatic};
 
 
 KNRadialSolutions[p_Association, OptionsPattern[]] :=
@@ -1025,7 +1030,9 @@ KNRadialSolutions[p_Association, OptionsPattern[]] :=
   \[Rho] = OptionValue["RayLength"];
   If[\[Rho] === Automatic, \[Rho] = KNRayLength[p["\[Omega]"], pg + 1]];
   \[Rho] = SetPrecision[\[Rho], wp];
-  hor = KNHorizonSolution[p, OptionValue["SeriesOrder"], OptionValue["SeriesPoint"], rmatch, wp, pg];
+  (* InterpolationOrder applies to the horizon solution only: the ray solution is only used at its end point *)
+  hor = KNHorizonSolution[p, OptionValue["SeriesOrder"], OptionValue["SeriesPoint"], rmatch, wp, pg,
+    InterpolationOrder -> OptionValue[InterpolationOrder]];
   inf = KNInfinitySolution[p, rmatch, \[Rho], wp, pg];
   <|"Parameters" -> p, "Horizon" -> hor, "Infinity" -> inf|>
 ];
@@ -1614,9 +1621,10 @@ QNMRadialKNHintz[s_, l_, m0_, n_, a0_, Q0_, \[Omega]in_, opts:OptionsPattern[]] 
     KNDelta[a \[Omega]w, Q, m, sg, b, KNDeltaBranch[aw, Qw, m, l, b, sg, L], L, wpi]];
   p = KNRadialParameters[\[Omega]w, a, Q, m, sg, b, \[Delta]];
   rp = p["rp"];
-  (* the same numerical parameters as for the frequency *)
+  (* the same numerical parameters as for the frequency, but with dense output (InterpolationOrder -> All) for the horizon
+     solution, which is evaluated between integration steps (piece B of the radial function) *)
   radopts = {"SeriesOrder" -> OptionValue["SeriesOrder"], "MatchingRadius" -> OptionValue["MatchingRadius"],
-    "RayLength" -> OptionValue["RayLength"], WorkingPrecision -> wpi, PrecisionGoal -> pg};
+    "RayLength" -> OptionValue["RayLength"], WorkingPrecision -> wpi, PrecisionGoal -> pg, InterpolationOrder -> All};
   sols = KNRadialSolutions[p, Sequence @@ radopts];
   If[KNWronskian[sols] === $Failed, Message[QNMRadialKN::ndsolve]; Return[$Failed, Module]];
   data = Join[KNRadialFunctionData[p, sols, wpi, pg], <|"QSign" -> qsign, "Component" -> comp, "Coordinates" -> coords, "OutputPrecision" -> prec|>];
