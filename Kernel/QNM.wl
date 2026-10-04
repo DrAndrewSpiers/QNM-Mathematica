@@ -947,21 +947,30 @@ KNHorizonSeriesValue[{A_, B_}, x0_] :=
 Options[KNHorizonSolution] = {InterpolationOrder -> Automatic};
 
 
+(* In extended precision the series is computed in fixed precision. With significance arithmetic the recurrence loses
+   precision term by term (near Q = 1, where \[Xi]0 is large, about 20 digits at 36-digit working precision); the
+   terms then become zeros of low accuracy, the convergence test stops the series early, and the starting values of
+   the integration (which are set to the working precision afterwards) are wrong at the 10^-14 level. *)
+SetAttributes[KNFixedPrecision, HoldRest];
+KNFixedPrecision[wp_, expr_] := If[wp === MachinePrecision, expr, Block[{$MinPrecision = wp, $MaxPrecision = wp}, expr]];
+
 
 KNHorizonSolution[p_Association, nser_, x00_, rmatch_, wp_, pg_, OptionsPattern[]] :=
  Module[{coeffs, x0, ser, cancel, P, Mm, \[CapitalDelta], c, ef, r0, w, ws, r, sol, io},
-  coeffs = KNHorizonSeriesCoefficients[p, nser, wp];
-  If[x00 === Automatic,
-    cancel = 10^Max[6, If[wp === MachinePrecision, 0, wp - pg]];
-    x0 = SetPrecision[1/3, wp];
-    ser = KNHorizonSeriesValue[coeffs, x0];
-    While[ser[[3]] > cancel && x0 > 1/1000,
-      x0 = x0/3;
+  KNFixedPrecision[wp,
+    coeffs = KNHorizonSeriesCoefficients[p, nser, wp];
+    If[x00 === Automatic,
+      cancel = 10^Max[6, If[wp === MachinePrecision, 0, wp - pg]];
+      x0 = SetPrecision[1/3, wp];
+      ser = KNHorizonSeriesValue[coeffs, x0];
+      While[ser[[3]] > cancel && x0 > 1/1000,
+        x0 = x0/3;
+        ser = KNHorizonSeriesValue[coeffs, x0];
+      ];
+      ,
+      x0 = SetPrecision[x00, wp];
       ser = KNHorizonSeriesValue[coeffs, x0];
     ];
-    ,
-    x0 = SetPrecision[x00, wp];
-    ser = KNHorizonSeriesValue[coeffs, x0];
   ];
   {P, Mm, \[CapitalDelta], c} = KNRadialCoefficients[p];
   r0 = p["rp"] + p["d"] x0;
