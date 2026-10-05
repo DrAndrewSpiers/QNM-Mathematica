@@ -1027,10 +1027,6 @@ KNInfinitySolution[p_Association, rmatch_, \[Rho]_, wp_, pg_] :=
 (*Both solutions, packaged for reuse (e.g. for constructing radial functions): the horizon solution (series and real-axis solution up to rmatch) and the outgoing solution on the ray, (u, u\[Sharp]) = Exp[-I k r] (w, w\[Sharp]) as functions of v, with r = rmatch + (\[Rho] - v) Exp[I \[Phi]]. At a quasinormal frequency the two are proportional at rmatch.*)
 
 
-(* ::Text:: *)
-(*Precision goal in machine precision. The error of a machine-precision frequency is set by the truncation error of the integrations: the error of the Wronskian at the root divided by |dW/d\[Omega]|, which is small for overtones and near extremality (about 200 for the fundamental l = m = 2 mode at a = 0.6, Q = 0.5, 0.02 for n = 3 and 0.002 for n = 4). With PrecisionGoal 11 the errors were about 10^-14 for fundamental modes, 2*10^-13 for n = 3 and at Q = 0.95, and 6*10^-12 for n = 4; with 13 they are about 10^-16 to 10^-15, 2*10^-14 and 2*10^-13, for about 5% more time (20-40% very close to extremality). Rounding errors (the scatter of W under tiny changes of \[Omega] is about 10^-15 in \[Omega] away from extremality), the secant tolerance, the ray length, the horizon series and the angular eigenvalue contribute less. At Q = 0.999 the result is limited instead by rounding errors in the horizon integration (about 2*10^-10, independent of the precision goal); there extended precision is needed.*)
-
-
 Options[KNRadialSolutions] = {"SeriesOrder" -> Automatic, "SeriesPoint" -> Automatic, "MatchingRadius" -> 6, "RayLength" -> Automatic,
   WorkingPrecision -> MachinePrecision, PrecisionGoal -> Automatic, InterpolationOrder -> Automatic};
 
@@ -1039,7 +1035,7 @@ KNRadialSolutions[p_Association, OptionsPattern[]] :=
  Module[{wp, pg, rmatch, \[Rho], hor, inf},
   wp = OptionValue[WorkingPrecision];
   pg = OptionValue[PrecisionGoal];
-  If[pg === Automatic, pg = If[wp === MachinePrecision, 13, wp - 8]];
+  If[pg === Automatic, pg = If[wp === MachinePrecision, 11, wp - 8]];
   rmatch = SetPrecision[OptionValue["MatchingRadius"], wp];
   \[Rho] = OptionValue["RayLength"];
   If[\[Rho] === Automatic, \[Rho] = KNRayLength[p["\[Omega]"], pg + 1]];
@@ -1217,7 +1213,7 @@ KNPrecision[x_] := Which[!InexactNumberQ[x], Infinity, x == 0 && Precision[x] ==
 
 
 QNMFrequencyKNHintz[s_, l_, m0_, n_, a0_, Q0_, opts:OptionsPattern[]] :=
- Module[{prec, wp, pg, pgM, pgC, m, a, Q, aM, QM, b, sg, L, guess, rootopts, \[Omega], err, res, wpi},
+ Module[{prec, wp, pg, m, a, Q, aM, QM, b, sg, L, guess, rootopts, \[Omega], err, res, wpi},
   (* precision of the result follows the input; the internal precision can be raised with WorkingPrecision *)
   prec = Min[KNPrecision[a0], KNPrecision[Q0]];
   wp = OptionValue[WorkingPrecision];
@@ -1256,17 +1252,15 @@ QNMFrequencyKNHintz[s_, l_, m0_, n_, a0_, Q0_, opts:OptionsPattern[]] :=
     {\[Omega], err} = res[[{1, 4}]];
     If[!TrueQ[res[[3]]] || err > 10^-(wp - 2) Abs[\[Omega]], Message[QNMFrequencyKN::acc, N[\[Omega]], N[err], wp]];
     ,
-    (* machine precision: near extremality the result can be much less accurate than ~10^-13, because the radial system
-       is badly conditioned there, and the size of the last secant step does not show this. We repeat the root search
-       with the precision goal changed by one digit (raised if it is below the maximum of 13, which is the default, and
-       lowered otherwise), keep the more accurate root, and use the change as an (upper) estimate of the error. *)
+    (* machine precision: near extremality the result can be much less accurate than ~10^-11, because the radial system
+       is badly conditioned there, and the size of the last secant step does not show this. The error is then dominated
+       by the precision goal of NDSolve, so we repeat the root search with the precision goal raised by one digit, keep
+       that more accurate root, and use the change as an (upper) estimate of the error. *)
     If[TrueQ[OptionValue["AccuracyCheck"]] || (OptionValue["AccuracyCheck"] === Automatic && (1 - a^2 - Q^2 < 1/50 || Q > 19/20)),
-      pgM = If[pg === Automatic, 13, Min[pg, 13]];
-      pgC = If[pgM < 13, pgM + 1, pgM - 1];
-      res = KNRoot[l, m, b, sg, aM, QM, \[Omega], rootopts, PrecisionGoal -> pgC];
+      res = KNRoot[l, m, b, sg, aM, QM, \[Omega], rootopts, PrecisionGoal -> If[pg === Automatic, 12, Min[pg + 1, 13]]];
       If[NumericQ[res[[1]]] && TrueQ[res[[3]]],
         err = Abs[res[[1]] - \[Omega]];
-        If[pgC > pgM, \[Omega] = res[[1]]];
+        \[Omega] = res[[1]];
         ,
         err = Infinity;
       ];
@@ -1619,7 +1613,7 @@ QNMRadialKNHintz[s_, l_, m0_, n_, a0_, Q0_, \[Omega]in_, opts:OptionsPattern[]] 
   pg = OptionValue[PrecisionGoal];
   If[wp === MachinePrecision || wp <= $MachinePrecision,
     wpi = MachinePrecision;
-    If[pg === Automatic, pg = 13, pg = Min[pg, 13]],
+    If[pg === Automatic, pg = 11, pg = Min[pg, 13]],
     wpi = Ceiling[wp] + 12;
     If[pg === Automatic, pg = Ceiling[wp] + 2]
   ];
