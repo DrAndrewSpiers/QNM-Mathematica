@@ -19,6 +19,7 @@ QNMRadialKN[s, l, m, n, a, Q]
 
 - `|s| = 2` gives the gravitational-led and `|s| = 1` the electromagnetic-led mode; they reduce to the Kerr modes with spin weight `s` as `Q -> 0`. The dipole `l = 1` exists only for the electromagnetic-led family, and `s = 0` is not supported.
 - The frequency does not depend on the sign of `s` or of `Q`, nor on Hintz's spin system. For `Q = 0`, `QNMFrequencyKN` returns `QNMFrequency[-Abs[s], l, m, n, a]`.
+- Small charges are supported; frequencies have been checked down to `Q = 10^-14`, where they agree with the Kerr values (the difference is of order `Q^2`). For small `Q` the gravitational-led radial function has its asymptotic form only for `r >> 1/Q^2` in the default spin system; use `Method -> {"HintzSeparated", "SpinSystem" -> -1}` there.
 - `QNMRadialKN` returns Hintz's radial function `w` (or `w♯`), normalised to `w = 1` at the outer horizon, as a `QNMRadialFunction`.
 
 ```Mathematica
