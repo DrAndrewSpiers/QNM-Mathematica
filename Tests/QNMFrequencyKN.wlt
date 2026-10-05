@@ -195,6 +195,70 @@ VerificationTest[
 ]
 
 
+(* Very small charge, down to Q = 10^-14. For Q < 1/1000 the angular separation constant is obtained from the Schur
+   complement starting from the branch reference; before, the full eigenvalue problem was used, whose eigenvalues have
+   absolute errors ~ 10^-16/Q, and for Q <= 10^-12 (machine precision) or 10^-10 (24 digits) the wrong branch was
+   selected. Kerr values: Leaver's continued fraction at 50 digits (independent of Hintz's system); the O(Q^2)
+   corrections are below 10^-23. *)
+VerificationTest[
+  QNMFrequencyKN[-2, 2, 2, 0, 0.3, 1.*^-12]
+  ,
+  0.4195266817638514865 - 0.0877292718943119865 I
+  ,
+  SameTest -> (Abs[#1 - #2] < 10^-12 &),
+  TestID -> "KN-smallQ-grav-a0.3-Q1e-12"
+]
+
+VerificationTest[
+  QNMFrequencyKN[-2, 2, 0, 0, 0.6, 1.*^-14]
+  ,
+  0.3880539184503474076 - 0.0859946693615210678 I
+  ,
+  SameTest -> (Abs[#1 - #2] < 10^-12 &),
+  TestID -> "KN-smallQ-grav-m0-a0.6-Q1e-14"
+]
+
+VerificationTest[
+  QNMFrequencyKN[-1, 1, 1, 0, 0.3, 1.*^-14]
+  ,
+  0.2718851496351502889 - 0.0905352486736808076 I
+  ,
+  SameTest -> (Abs[#1 - #2] < 10^-12 &),
+  TestID -> "KN-smallQ-EM-a0.3-Q1e-14"
+]
+
+VerificationTest[
+  QNMFrequencyKN[-2, 2, 2, 1, 0.9, 1.*^-12]
+  ,
+  0.6676575508183808705 - 0.1952520670556152557 I
+  ,
+  SameTest -> (Abs[#1 - #2] < 10^-12 &),
+  TestID -> "KN-smallQ-overtone-a0.9-Q1e-12"
+]
+
+(* 24 digits, against a 40-digit calculation with this package (which agrees with omega_Kerr + Q^2 omega1 + ...) *)
+VerificationTest[
+  QNMFrequencyKN[-1, 1, 1, 0, SetPrecision[3/10, 24], SetPrecision[10^-12, 24]]
+  ,
+  0.27188514963515028885197203048804 - 0.09053524867368080755057258063514 I
+  ,
+  SameTest -> (Abs[#1 - #2] < 10^-22 &),
+  TestID -> "KN-smallQ-EM-24digits"
+]
+
+(* omega - omega_Kerr = Q^2 omega1 + O(Q^4) at Q = 10^-6 (24 digits; omega_Kerr from Leaver's method, omega1 from
+   Mark et al., whose value agrees with the one from this package to 1.2*10^-7) *)
+VerificationTest[
+  (QNMFrequencyKN[-2, 2, 2, 0, SetPrecision[3/5, 24], SetPrecision[10^-6, 24]] -
+     (0.4940447817813842297293347640345755488 - 0.0837652021610408974273121922742052815 I))/10^-12
+  ,
+  0.12895437458774348 + 0.004480822088666132 I
+  ,
+  SameTest -> (Abs[#1 - #2] < 5 10^-7 &),
+  TestID -> "KN-smallQ-Q2-scaling"
+]
+
+
 (* ::Section:: *)
 (*Overtones*)
 

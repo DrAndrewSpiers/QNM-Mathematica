@@ -87,6 +87,7 @@ QNMRadialKN::coords = "Coordinate options are \"BL\" (or \"Boyer-Lindquist\"), \
 QNMRadialKN::comp = "The component must be \"w\" or \"w\[Sharp]\", but got `1`.";
 QNMRadialKN::ndsolve = "The numerical integration of the radial system failed.";
 QNMRadialKN::asym = "The asymptotic series was matched at r = `1` with an estimated relative error `2`; values beyond this radius may be inaccurate.";
+QNMRadialKN::spinsys = "For small charge, w in the spin system `1` takes its asymptotic form only for r >> 1/Q^2. In the spin system `2` (Method -> {\"HintzSeparated\", \"SpinSystem\" -> `2`}) it does so for r >> 1; the frequency is the same and can be passed with \"Frequency\".";
 QNMRadialFunction::dmval = "Radius `1` lies outside the computational domain.";
 
 
@@ -813,13 +814,35 @@ KNDeltaRefine[{A11_, A12_, A21_, A22_}, q_, b_, \[Delta]0_, tol_] :=
 ];
 
 
+(* Small charge (Q < 1/1000). The eigenvalues of the full problem have absolute errors ~ q 10^-wp; for Q < 10^-8 in
+   machine precision these exceed the spacing ~ Q of the values of \[Delta] of neighbouring branches (\[Delta] ~ Q), and
+   for Q <= 10^-12 the refinement converged to other branches. For Q < 1/1000 we therefore do not use the full problem
+   at all and iterate the Schur complement from \[Delta]ref, which is accurate (it comes from the continuation in
+   a\[Omega] from the exact value at a\[Omega] = 0, or from a nearby frequency), in fixed precision in extended
+   precision. The iteration converges at the rate ~ |\[Delta]|/(2q) ~ Q^2, so one or two steps give full accuracy. *)
+KNDeltaSchur[{A11_, A12_, A21_, A22_}, q_, b_, \[Delta]0_, tol_] :=
+ Module[{T, \[Delta] = \[Delta]0, \[Delta]new},
+  T[d_] := If[b == 1,
+    A22 + A21 . LinearSolve[(2 q + d) IdentityMatrix[Length[A11]] - A11, A12],
+    A11 - A12 . LinearSolve[(2 q - d) IdentityMatrix[Length[A22]] + A22, A21]];
+  Do[
+    \[Delta]new = First[Nearest[Eigenvalues[T[\[Delta]]], \[Delta]]];
+    If[Abs[\[Delta]new - \[Delta]] <= tol Abs[\[Delta]new], \[Delta] = \[Delta]new; Break[]];
+    \[Delta] = \[Delta]new;
+  , {6}];
+  \[Delta]
+];
+
+
 (* \[Delta] on the branch closest to \[Delta]ref. The refinement is only needed (and only used) in machine precision: in
    extended precision the guard digits absorb the cancellation, and significance arithmetic in the Schur complement
-   would underestimate the precision of the result. *)
+   would underestimate the precision of the result. For Q < 1/1000 see KNDeltaSchur. *)
 KNDelta[a\[Omega]_, Q_, m_, sg_, b_, \[Delta]ref_, L_, wp_] :=
  Module[{blocks, q, \[Delta]},
   blocks = KNSpectralBlocks[a\[Omega], Q, m, sg, L, wp];
   q = 3/(2 Q);
+  If[Q < 1/1000,
+    Return[KNFixedPrecision[wp, KNDeltaSchur[blocks, q, b, SetPrecision[\[Delta]ref, wp], 10^(1 - If[wp === MachinePrecision, $MachinePrecision, wp])]], Module]];
   \[Delta] = First[Nearest[KNDeltaCandidates[blocks, q, b], \[Delta]ref]];
   If[wp === MachinePrecision,
     If[Abs[q] > 10 Abs[\[Delta]], \[Delta] = KNDeltaRefine[blocks, q, b, \[Delta], 10^(1 - $MachinePrecision)]],
@@ -1639,7 +1662,10 @@ QNMRadialKNHintz[s_, l_, m0_, n_, a0_, Q0_, \[Omega]in_, opts:OptionsPattern[]] 
   If[KNWronskian[sols] === $Failed, Message[QNMRadialKN::ndsolve]; Return[$Failed, Module]];
   data = Join[KNRadialFunctionData[p, sols, wpi, pg], <|"QSign" -> qsign, "Component" -> comp, "Coordinates" -> coords, "OutputPrecision" -> prec|>];
   If[data["AsymptoticError"] > 10^-(pg - 2) || data["MatchingError"] > 10^-(pg - 3),
-    Message[QNMRadialKN::asym, N[data["rfar"]], N[Max[data["AsymptoticError"], data["MatchingError"]]]]];
+    Message[QNMRadialKN::asym, N[data["rfar"]], N[Max[data["AsymptoticError"], data["MatchingError"]]]];
+    (* for sg b = 1 the coefficient P = R1 + I sg \[Lambda] of the radial system is ~ 3/Q, and the expansion in 1/r holds only for
+       r >> |\[Lambda]p/\[Rho]1p| ~ 1/Q^2; for sg b = -1 it is ~ Q and the expansion holds for r >> 1 *)
+    If[sg b == 1 && Q < 1/10, Message[QNMRadialKN::spinsys, sg, -sg]]];
   QNMRadialFunction[<|"s" -> s, "l" -> l, "m" -> m0, "n" -> n, "a" -> a0, "Q" -> Q0, "\[Omega]" -> \[Omega],
     "Eigenvalue" -> KNOutputPrecision[qsign p["\[Lambda]"], prec],
     "Family" -> If[b == 1, "gravitational-led", "electromagnetic-led"], "SpinSystem" -> sg, "Component" -> comp,

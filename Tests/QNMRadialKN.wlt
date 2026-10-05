@@ -229,6 +229,46 @@ VerificationTest[
 
 
 (* ::Section:: *)
+(*Small charge*)
+
+
+(* 24-digit reference values computed with this package. For the electromagnetic-led family in the default spin
+   system (sg b = -1) w has its asymptotic form for r >> 1 at any Q. *)
+VerificationTest[
+  QNMRadialKN[-1, 1, 1, 0, 0.3, 1.*^-10][{3., 10., 100.}]
+  ,
+  {1.5508988855985773624 + 1.4547517211808068695 I, 20.084120490370475015 - 16.382258524351073145 I,
+   9.454330832936173958*^8 + 5.704934938860427439*^8 I}
+  ,
+  SameTest -> (Max[Abs[#1/#2 - 1]] < 10^-10 &),
+  TestID -> "KNRadial-smallQ-EM"
+]
+
+(* For the gravitational-led family in the spin system -1 (sg b = -1); the frequency is passed from the default spin
+   system, in which it is computed more accurately *)
+VerificationTest[
+  QNMRadialKN[-2, 2, 2, 0, 0.6, 1.*^-10, Method -> {"HintzSeparated", "SpinSystem" -> -1},
+    "Frequency" -> QNMFrequencyKN[-2, 2, 2, 0, 0.6, 1.*^-10]][{3., 10., 100.}]
+  ,
+  {-0.82849673718302256216 + 0.92261708040247500215 I, 3.2325511169207129895 - 3.8591271636752165238 I,
+   -1.6013088280142835448*^6 - 3.5649136526985546298*^7 I}
+  ,
+  SameTest -> (Max[Abs[#1/#2 - 1]] < 10^-10 &),
+  TestID -> "KNRadial-smallQ-grav-spinsystem-1"
+]
+
+(* For sg b = 1 at small charge the expansion of w in 1/r holds only for r >> 1/Q^2; the function says so *)
+VerificationTest[
+  Head[QNMRadialKN[-2, 2, 2, 0, 0.6, 0.001]]
+  ,
+  QNMRadialFunction
+  ,
+  {QNMRadialKN::asym, QNMRadialKN::spinsys},
+  TestID -> "KNRadial-smallQ-grav-message"
+]
+
+
+(* ::Section:: *)
 (*Invalid input*)
 
 
